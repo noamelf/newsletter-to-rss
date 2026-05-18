@@ -12,85 +12,68 @@ Gmail (newsletter-rss label)
         → Feedbin subscribes
 ```
 
-## Deployment
+## One-Command Deployment
 
-### 1. DNS
-
-Create A records pointing to your Hetzner instance:
-```
-n8n.noamelf.com    → <HETZNER_IP>
-feeds.noamelf.com  → <HETZNER_IP>
-```
-
-### 2. Server Setup
+Prerequisites:
+- `hcloud` CLI authenticated (`hcloud context create myproject`)
+- `CLOUDFLARE_API_TOKEN` env var with DNS edit permissions
+- `jq` installed (`brew install jq`)
 
 ```bash
-# Copy files to server
-scp docker-compose.yml Caddyfile backup.sh setup.sh root@<HETZNER_IP>:/opt/newsletter-rss/
-
-# SSH in and run setup
-ssh root@<HETZNER_IP>
-cd /opt/newsletter-rss
-chmod +x setup.sh backup.sh
+export CLOUDFLARE_API_TOKEN=your_token_here
 ./setup.sh
-docker compose up -d
 ```
 
-### 3. n8n Setup
+This will interactively:
+1. Create a Hetzner server (Docker pre-installed)
+2. Configure Hetzner firewall (22, 80, 443 only)
+3. Create Cloudflare DNS records (n8n.noamelf.com, feeds.noamelf.com)
+4. Deploy Docker Compose stack (n8n + Postgres + Caddy)
+5. Generate secrets and feed token
+6. Set up daily backup cron
+
+## After Deployment
+
+### 1. n8n Setup
 
 1. Open https://n8n.noamelf.com
 2. Create your n8n account
 3. Add Gmail OAuth2 credentials (see below)
-4. Import the workflow from `workflow.json`
+4. Import `workflow.json` (already on server at `/opt/newsletter-rss/`)
 5. Activate the workflow
 
-### 4. Gmail OAuth2
+### 2. Gmail OAuth2
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com)
-2. Create/select a project
-3. Enable Gmail API
-4. Create OAuth 2.0 credentials (Web application)
-5. Redirect URI: `https://n8n.noamelf.com/rest/oauth2-credential/callback`
-6. In n8n: Credentials → New → Gmail OAuth2 → paste Client ID & Secret → Connect
+2. Create/select a project → Enable Gmail API
+3. Create OAuth 2.0 credentials (Web application)
+4. Redirect URI: `https://n8n.noamelf.com/rest/oauth2-credential/callback`
+5. In n8n: Credentials → New → Gmail OAuth2 → paste Client ID & Secret → Connect
 
-### 5. Gmail Filters
+### 3. Gmail Filters
 
-Create filters for each newsletter:
-- From: `newsletter@example.com`
-- Apply label: `newsletter-rss`
+Create a label `newsletter-rss`, then add filters for each newsletter:
+- From: `newsletter@example.com` → Apply label: `newsletter-rss`
 
-### 6. Feedbin
+### 4. Feedbin
 
-Subscribe to:
+Subscribe to your feeds (token shown at end of setup):
 - Combined: `https://feeds.noamelf.com/<FEED_TOKEN>/all.xml`
 - Per-newsletter: `https://feeds.noamelf.com/<FEED_TOKEN>/<sender-slug>.xml`
-
-(Find your FEED_TOKEN in `/opt/newsletter-rss/.env` on the server)
-
-## Backups
-
-Daily backup via cron:
-```bash
-# Add to crontab
-0 3 * * * /opt/newsletter-rss/backup.sh >> /var/log/newsletter-rss-backup.log 2>&1
-```
 
 ## Updates
 
 ```bash
-cd /opt/newsletter-rss
-./backup.sh  # backup first
-docker compose pull
-docker compose up -d
+ssh root@<SERVER_IP> "cd /opt/newsletter-rss && ./backup.sh && docker compose pull && docker compose up -d"
 ```
 
-## Security Checklist
+## Security
 
-- [x] HTTPS via Caddy (automatic)
-- [x] n8n bound to 127.0.0.1 only
-- [x] Postgres not exposed
-- [x] Feed path is unguessable
-- [x] state.json blocked from public access
-- [ ] Hetzner firewall: allow only 22, 80, 443
-- [ ] SSH: key-only auth
-- [ ] Consider Tailscale/Cloudflare Access for n8n UI
+Handled automatically by `setup.sh`:
+- ✅ HTTPS via Caddy (automatic Let's Encrypt)
+- ✅ n8n bound to 127.0.0.1 only
+- ✅ Postgres not exposed outside Docker
+- ✅ Feed path is unguessable token
+- ✅ state.json returns 403 publicly
+- ✅ Hetzner firewall: only 22, 80, 443
+- ✅ Daily backup with pg_dump + 14-day retention
