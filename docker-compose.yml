@@ -17,6 +17,7 @@ services:
   n8n:
     image: n8nio/n8n:latest
     restart: unless-stopped
+    user: "1000:1000"
     depends_on:
       postgres:
         condition: service_healthy
