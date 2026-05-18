@@ -4,11 +4,18 @@
     {
       "parameters": {
         "pollTimes": {
-          "item": [{ "mode": "everyMinute", "minute": 5 }]
+          "item": [
+            {
+              "mode": "everyMinute",
+              "minute": 5
+            }
+          ]
         },
         "filters": {
           "includeSpamTrash": false,
-          "labelIds": ["newsletter-rss"]
+          "labelIds": [
+            "newsletter-rss"
+          ]
         },
         "options": {
           "dataPropertyAttachmentsPrefixName": "attachment_"
@@ -18,7 +25,10 @@
       "name": "Gmail Trigger",
       "type": "n8n-nodes-base.gmailTrigger",
       "typeVersion": 1,
-      "position": [240, 300],
+      "position": [
+        240,
+        300
+      ],
       "credentials": {
         "gmailOAuth2": {
           "id": "",
@@ -34,7 +44,10 @@
       "name": "Normalize Email",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [
+        460,
+        300
+      ]
     },
     {
       "parameters": {
@@ -44,7 +57,10 @@
       "name": "Extract Links",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [680, 300],
+      "position": [
+        680,
+        300
+      ],
       "onError": "continueRegularOutput"
     },
     {
@@ -55,7 +71,10 @@
       "name": "Clean Links",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 300]
+      "position": [
+        900,
+        300
+      ]
     },
     {
       "parameters": {
@@ -65,7 +84,10 @@
       "name": "Filter Junk Links",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 300]
+      "position": [
+        1120,
+        300
+      ]
     },
     {
       "parameters": {
@@ -75,7 +97,10 @@
       "name": "Deduplicate Within Run",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1340, 300]
+      "position": [
+        1340,
+        300
+      ]
     },
     {
       "parameters": {
@@ -85,7 +110,10 @@
       "name": "Fetch Titles",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1560, 300],
+      "position": [
+        1560,
+        300
+      ],
       "onError": "continueRegularOutput"
     },
     {
@@ -96,7 +124,10 @@
       "name": "Read Existing State",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1780, 300]
+      "position": [
+        1780,
+        300
+      ]
     },
     {
       "parameters": {
@@ -106,7 +137,10 @@
       "name": "Merge and Deduplicate",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2000, 300]
+      "position": [
+        2000,
+        300
+      ]
     },
     {
       "parameters": {
@@ -116,42 +150,114 @@
       "name": "Generate RSS and Write Files",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2220, 300]
+      "position": [
+        2220,
+        300
+      ]
     }
   ],
   "connections": {
     "Gmail Trigger": {
-      "main": [[{ "node": "Normalize Email", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Normalize Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Normalize Email": {
-      "main": [[{ "node": "Extract Links", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Extract Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Extract Links": {
-      "main": [[{ "node": "Clean Links", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Clean Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Clean Links": {
-      "main": [[{ "node": "Filter Junk Links", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Filter Junk Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Filter Junk Links": {
-      "main": [[{ "node": "Deduplicate Within Run", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Deduplicate Within Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Deduplicate Within Run": {
-      "main": [[{ "node": "Fetch Titles", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Fetch Titles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Fetch Titles": {
-      "main": [[{ "node": "Read Existing State", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Read Existing State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Read Existing State": {
-      "main": [[{ "node": "Merge and Deduplicate", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Merge and Deduplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Merge and Deduplicate": {
-      "main": [[{ "node": "Generate RSS and Write Files", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Generate RSS and Write Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
     "executionOrder": "v1"
-  },
-  "meta": {
-    "templateCredsSetupCompleted": true
   }
 }
