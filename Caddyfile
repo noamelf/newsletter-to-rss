@@ -1,0 +1,14 @@
+n8n.noamelf.com {
+    reverse_proxy n8n:5678
+}
+
+feeds.noamelf.com {
+    root * /srv/feeds
+    file_server
+
+    @xml path *.xml
+    header @xml Content-Type "application/rss+xml; charset=utf-8"
+
+    @json path *.json
+    respond @json 403
+}

@@ -1,0 +1,6 @@
+postgres_data/
+n8n_data/
+caddy_data/
+caddy_config/
+feeds/
+.env
