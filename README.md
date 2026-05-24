@@ -6,7 +6,7 @@ Self-hosted n8n workflow that extracts individual links from aggregated newslett
 
 ```
 Gmail (newsletter-rss label)
-  → n8n (AI extract links via OpenRouter/gemini-2.5-flash, dedupe)
+  → n8n (AI extract links via OpenRouter/gpt-4.1-nano, dedupe)
     → RSS XML files (per-newsletter + combined)
       → Caddy serves over HTTPS
         → Your RSS reader subscribes
@@ -76,6 +76,36 @@ Set these in `.env` (see `.env.example`):
 | `N8N_DOMAIN` | Domain for n8n UI, e.g. `n8n.example.com` |
 | `FEEDS_DOMAIN` | Domain for RSS feeds, e.g. `feeds.example.com` |
 | `TZ` | Timezone, e.g. `Asia/Jerusalem` |
+
+## Model Benchmarking
+
+Use `test_models.py` to quickly compare OpenRouter models against real newsletter HTML before changing the workflow model.
+
+```bash
+export OPENROUTER_API_KEY=sk-or-...
+python3 test_models.py /path/to/newsletter.html
+```
+
+Fast defaults test five representative candidates (`gemini-2.0-flash-001`, `gemini-2.0-flash-lite-001`, `gpt-5.4-nano`, `llama-4-scout`, and `qwen3-235b-a22b`) with bounded HTTP checks. Use a smaller URL sample for very fast smoke tests:
+
+```bash
+python3 test_models.py /path/to/newsletter.html --max-http 5 --parallel 5
+```
+
+Test specific models:
+
+```bash
+python3 test_models.py /path/to/newsletter.html \
+  -m google/gemini-2.0-flash-001 openai/gpt-5.4-nano
+```
+
+Run the full exploratory list:
+
+```bash
+python3 test_models.py /path/to/newsletter.html --all
+```
+
+The script exits non-zero when a model errors, hallucinates URLs not present in the source HTML, or returns URLs that fail HTTP verification.
 
 ## Updates
 

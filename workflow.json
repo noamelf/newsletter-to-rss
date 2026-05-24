@@ -95,7 +95,7 @@
     },
     {
       "parameters": {
-        "model": "google/gemini-2.5-flash-lite",
+        "model": "openai/gpt-4.1-nano",
         "options": {
           "responseFormat": "json_object",
           "temperature": 0.1
