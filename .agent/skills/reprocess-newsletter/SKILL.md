@@ -90,14 +90,32 @@ curl -s "https://feeds.noamelf.com/396cbfc5186f36a43a8cd04ca43d1ef7/all.xml" | h
 
 ## Finding a Message ID
 
-To find which message ID to remove, check recent executions:
+The last entry in `possibleDuplicates` is typically the most recent newsletter. To correlate IDs with newsletter names, cross-reference the `addedAt` timestamps in `state.json` against execution times.
+
+**state.json is a flat list** (not `{"items": [...]}`) — iterate it directly:
 
 ```bash
-curl -s "http://localhost:5678/api/v1/executions?workflowId=A3ZlbZ8PUi0CvLvs&limit=5" \
-  -H "X-N8N-API-KEY: $API_KEY"
+ssh root@n8n.noamelf.com "cat /opt/newsletter-rss/feeds/*/state.json" | python3 -c "
+import json, sys
+items = json.load(sys.stdin)  # list, not dict
+for item in items[-5:]:
+    print(item.get('addedAt'), item.get('senderSlug'), item.get('title'))
+"
 ```
 
-Or check the `possibleDuplicates` array — the last entry is typically the most recent newsletter.
+Cross-reference with execution times:
+
+```bash
+ssh root@n8n.noamelf.com "curl -s 'http://localhost:5678/api/v1/executions?workflowId=A3ZlbZ8PUi0CvLvs&limit=5' \
+  -H 'X-N8N-API-KEY: $API_KEY'" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for ex in data.get('data', []):
+    print(ex.get('id'), ex.get('startedAt'), ex.get('status'))
+"
+```
+
+The most recently added items in `state.json` will have `addedAt` timestamps matching the execution `startedAt` — that execution's position in `possibleDuplicates` is the ID to remove (last entry = most recent).
 
 ## Common Mistakes
 
