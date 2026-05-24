@@ -1,8 +1,8 @@
-n8n.noamelf.com {
+{$N8N_DOMAIN} {
     reverse_proxy n8n:5678
 }
 
-feeds.noamelf.com {
+{$FEEDS_DOMAIN} {
     root * /srv/feeds
     file_server
 

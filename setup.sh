@@ -3,9 +3,9 @@
 # Prerequisites: hcloud CLI authenticated, CLOUDFLARE_API_TOKEN env var set
 set -euo pipefail
 
-DOMAIN="noamelf.com"
-N8N_DOMAIN="n8n.${DOMAIN}"
-FEEDS_DOMAIN="feeds.${DOMAIN}"
+DOMAIN="${DOMAIN:-example.com}"
+N8N_DOMAIN="${N8N_SUBDOMAIN:-n8n}.${DOMAIN}"
+FEEDS_DOMAIN="${FEEDS_SUBDOMAIN:-feeds}.${DOMAIN}"
 CF_ZONE="${DOMAIN}"
 PROJECT_DIR="/opt/newsletter-rss"
 SERVER_NAME="newsletter-rss"
@@ -221,8 +221,8 @@ if [[ ! -f .env ]]; then
   cat > .env <<EOF
 POSTGRES_PASSWORD=$POSTGRES_PASSWORD
 FEED_TOKEN=$FEED_TOKEN
-N8N_DOMAIN=n8n.noamelf.com
-FEEDS_DOMAIN=feeds.noamelf.com
+N8N_DOMAIN=${N8N_DOMAIN}
+FEEDS_DOMAIN=${FEEDS_DOMAIN}
 TZ=Asia/Jerusalem
 EOF
 

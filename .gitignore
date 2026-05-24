@@ -4,3 +4,5 @@ caddy_data/
 caddy_config/
 feeds/
 .env
+.vscode/
+.agent/
