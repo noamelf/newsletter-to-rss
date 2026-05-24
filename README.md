@@ -6,7 +6,7 @@ Self-hosted n8n workflow that extracts individual links from aggregated newslett
 
 ```
 Gmail (newsletter-rss label)
-  → n8n (AI extract links via OpenRouter/gpt-4.1-nano, dedupe)
+  → n8n (AI extract links via OpenRouter/deepseek-v4-flash, dedupe)
     → RSS XML files (per-newsletter + combined)
       → Caddy serves over HTTPS
         → Your RSS reader subscribes

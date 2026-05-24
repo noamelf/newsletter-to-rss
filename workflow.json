@@ -95,7 +95,7 @@
     },
     {
       "parameters": {
-        "model": "openai/gpt-4.1-nano",
+        "model": "deepseek/deepseek-v4-flash",
         "options": {
           "responseFormat": "json_object",
           "temperature": 0.1
