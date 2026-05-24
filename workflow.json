@@ -14,12 +14,10 @@
         "filters": {
           "includeSpamTrash": false,
           "labelIds": [
-            "newsletter-rss"
+            "Label_6623629413425846416"
           ]
         },
-        "options": {
-          "dataPropertyAttachmentsPrefixName": "attachment_"
-        }
+        "options": {}
       },
       "id": "node-gmail-trigger",
       "name": "Gmail Trigger",
@@ -31,133 +29,173 @@
       ],
       "credentials": {
         "gmailOAuth2": {
-          "id": "",
-          "name": "Gmail OAuth2"
+          "id": "e8G2AD4o1BGn0Gk8",
+          "name": "Gmail account"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "return items.map(item => {\n  const json = item.json;\n\n  const subject =\n    json.subject ||\n    json.Subject ||\n    json.headers?.subject ||\n    'Untitled newsletter';\n\n  const from =\n    json.from?.text ||\n    json.from ||\n    json.From ||\n    json.headers?.from ||\n    'Unknown sender';\n\n  const senderEmail = (\n    json.from?.value?.[0]?.address ||\n    (typeof json.from === 'string' ? json.from.match(/[\\w.-]+@[\\w.-]+/)?.[0] : null) ||\n    'unknown'\n  ).toLowerCase();\n\n  const senderSlug = senderEmail\n    .replace(/@.*$/, '')\n    .replace(/[^a-z0-9]+/g, '-')\n    .slice(0, 40);\n\n  const date =\n    json.date ||\n    json.Date ||\n    json.internalDate ||\n    new Date().toISOString();\n\n  const html =\n    json.html ||\n    json.textHtml ||\n    json.body?.html ||\n    json.payload?.body?.data ||\n    '';\n\n  const text =\n    json.text ||\n    json.textPlain ||\n    json.body?.text ||\n    '';\n\n  const sourceMessageId =\n    json.id ||\n    json.messageId ||\n    json.message_id ||\n    `${senderEmail}-${subject}-${date}`;\n\n  return {\n    json: {\n      subject,\n      from,\n      senderEmail,\n      senderSlug,\n      date,\n      html,\n      text,\n      sourceMessageId,\n    },\n  };\n});"
+        "method": "GET",
+        "url": "=https://gmail.googleapis.com/gmail/v1/users/me/messages/{{ $json.id }}?format=full",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "options": {}
+      },
+      "id": "node-fetch-message",
+      "name": "Fetch Full Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        460,
+        300
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "e8G2AD4o1BGn0Gk8",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function getBodyParts(payload) {\n  const parts = { html: '', text: '' };\n\n  function decode(data) {\n    if (!data) return '';\n    const base64 = data.replace(/-/g, '+').replace(/_/g, '/');\n    return Buffer.from(base64, 'base64').toString('utf-8');\n  }\n\n  function traverse(part) {\n    if (!part) return;\n    if (part.mimeType === 'text/html' && part.body?.data) {\n      parts.html = decode(part.body.data);\n    } else if (part.mimeType === 'text/plain' && part.body?.data) {\n      parts.text = decode(part.body.data);\n    }\n    if (part.parts) part.parts.forEach(traverse);\n  }\n\n  traverse(payload);\n  return parts;\n}\n\nreturn items.map(item => {\n  const json = item.json;\n\n  const headers = json.payload?.headers || [];\n  const getHeader = name => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value || '';\n\n  const subject = getHeader('subject') || 'Untitled newsletter';\n  const from = getHeader('from') || 'Unknown sender';\n  const date = getHeader('date') || new Date().toISOString();\n\n  const senderEmail = (\n    from.match(/[\\w.+-]+@[\\w.-]+/)?.[0] || 'unknown'\n  ).toLowerCase();\n\n  const senderSlug = senderEmail\n    .replace(/@.*$/, '')\n    .replace(/[^a-z0-9]+/g, '-')\n    .slice(0, 40);\n\n  const { html, text } = getBodyParts(json.payload);\n\n  const sourceMessageId = json.id || `${senderEmail}-${subject}-${date}`;\n\n  return {\n    json: { subject, from, senderEmail, senderSlug, date, html, text, sourceMessageId },\n  };\n});"
       },
       "id": "node-normalize",
       "name": "Normalize Email",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        460,
+        680,
         300
       ]
     },
     {
       "parameters": {
-        "jsCode": "function extractLinksFromHtml(html) {\n  const links = [];\n  const regex = /<a\\s+(?:[^>]*?\\s+)?href=([\"'])(.*?)\\1[^>]*>([\\s\\S]*?)<\\/a>/gi;\n  let match;\n  while ((match = regex.exec(html)) !== null) {\n    const href = match[2];\n    const anchorText = match[3].replace(/<[^>]+>/g, '').trim();\n    links.push({ href, anchorText });\n  }\n  return links;\n}\n\nfunction extractLinksFromText(text) {\n  const regex = /(https?:\\/\\/[^\\s<>\"')\\]]+)/gi;\n  const matches = text.match(regex) || [];\n  return matches.map(href => ({ href, anchorText: '' }));\n}\n\nconst output = [];\n\nfor (const item of items) {\n  const { subject, from, senderEmail, senderSlug, date, html, text, sourceMessageId } = item.json;\n\n  let links = [];\n  if (html) {\n    links = extractLinksFromHtml(html);\n  }\n  if (links.length === 0 && text) {\n    links = extractLinksFromText(text);\n  }\n\n  for (const { href, anchorText } of links) {\n    output.push({\n      json: {\n        rawUrl: href,\n        anchorText,\n        newsletterSubject: subject,\n        newsletterFrom: from,\n        senderEmail,\n        senderSlug,\n        newsletterDate: date,\n        sourceMessageId,\n      },\n    });\n  }\n}\n\nreturn output;"
+        "promptType": "define",
+        "text": "=Subject: {{ $json.subject }}\nFrom: {{ $json.from }}\n\n{{ $json.html || $json.text }}",
+        "hasOutputParser": false,
+        "messages": {
+          "messageValues": [
+            {
+              "type": "SystemMessagePromptTemplate",
+              "message": "You extract article links from newsletter emails and return JSON.\n\nOutput format: {\"links\": [{\"url\": \"https://...\", \"title\": \"Article Title\"}]}\n\nRules:\n- Extract only meaningful article/content links (blog posts, articles, tools, resources)\n- Skip: tracking URLs, social media (twitter/x.com, facebook, instagram, linkedin, youtube, tiktok, threads), unsubscribe/preferences/manage-subscription links, image files (.png/.jpg/.gif/.svg/.webp/.ico), root domains with no path, email platform links (mailchimp, beehiiv, substack, convertkit, sendgrid, buttondown)\n- Clean URLs: strip tracking params (utm_*, mc_cid, mc_eid, fbclid, gclid, etc.), unwrap redirect/tracking wrappers\n- Titles: use anchor text if descriptive, otherwise infer from URL path and context\n- Deduplicate by URL\n- If no content links found, return {\"links\": []}"
+            }
+          ]
+        }
       },
-      "id": "node-extract-links",
-      "name": "Extract Links",
+      "id": "node-ai-extract",
+      "name": "AI Extract Links",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        920,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "google/gemini-2.5-flash",
+        "options": {
+          "responseFormat": "json_object",
+          "temperature": 0.1
+        }
+      },
+      "id": "node-openrouter-model",
+      "name": "OpenRouter Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        780,
+        520
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "REPLACE_ME",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const output = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const responseText = items[i].json.text || items[i].json.response || '';\n\n  const emailData = $('Normalize Email').all()[i]?.json || {};\n  const { subject, from: senderFrom, senderEmail, senderSlug, date, sourceMessageId } = emailData;\n\n  let links = [];\n  try {\n    let jsonStr = responseText;\n    const codeBlockMatch = jsonStr.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n    if (codeBlockMatch) jsonStr = codeBlockMatch[1];\n    const parsed = JSON.parse(jsonStr.trim());\n    links = parsed.links || parsed;\n  } catch (e) {\n    const jsonMatch = responseText.match(/\\{[\\s\\S]*\"links\"[\\s\\S]*\\}/);\n    if (jsonMatch) {\n      try { links = JSON.parse(jsonMatch[0]).links || []; } catch {}\n    }\n  }\n\n  if (!Array.isArray(links)) links = [];\n\n  for (const link of links) {\n    if (!link.url) continue;\n    output.push({\n      json: {\n        url: link.url,\n        title: link.title || link.url,\n        anchorText: link.title || '',\n        newsletterSubject: subject,\n        newsletterFrom: senderFrom,\n        senderEmail,\n        senderSlug,\n        newsletterDate: date,\n        sourceMessageId,\n      },\n    });\n  }\n}\n\nreturn output;"
+      },
+      "id": "node-parse-ai",
+      "name": "Parse AI Output",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        680,
+        1160,
         300
       ],
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "jsCode": "const TRACKING_PARAMS = new Set([\n  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term',\n  'utm_content', 'utm_id', 'mc_cid', 'mc_eid', 'igshid',\n  'fbclid', 'gclid', 'msclkid', 'vero_id', '_hsenc', '_hsmi',\n  'ck_subscriber_id', 'ref', 'source',\n]);\n\nconst REDIRECT_HOSTS = [\n  'mailchi.mp', 'list-manage.com', 'sendgrid.net',\n  'substack.com', 'buttondown.email', 'convertkit-mail.com',\n  'beehiiv.com', 'click.convertkit-mail.com',\n  'email.mg', 'links.', 'click.', 'trk.',\n  'customer.io', 'hubspot.com', 'hs-analytics.net',\n];\n\nconst REDIRECT_PARAMS = [\n  'url', 'u', 'target', 'redirect', 'redirect_url',\n  'destination', 'link', 'goto',\n];\n\nfunction isRedirectHost(hostname) {\n  const host = hostname.toLowerCase();\n  return REDIRECT_HOSTS.some(pattern =>\n    host === pattern ||\n    host.endsWith('.' + pattern) ||\n    host.includes(pattern)\n  );\n}\n\nfunction unwrapRedirect(url, depth = 0) {\n  if (depth > 3) return url;\n  let parsed;\n  try { parsed = new URL(url); } catch { return url; }\n  if (!isRedirectHost(parsed.hostname)) return url;\n  for (const param of REDIRECT_PARAMS) {\n    const value = parsed.searchParams.get(param);\n    if (value && value.startsWith('http')) {\n      return unwrapRedirect(value, depth + 1);\n    }\n  }\n  const pathMatch = parsed.pathname.match(/\\/(https?:\\/\\/.+)/);\n  if (pathMatch) {\n    return unwrapRedirect(decodeURIComponent(pathMatch[1]), depth + 1);\n  }\n  return url;\n}\n\nfunction cleanUrl(rawUrl) {\n  let url = rawUrl.replace(/&amp;/g, '&').trim();\n  url = unwrapRedirect(url);\n  let parsed;\n  try { parsed = new URL(url); } catch { return null; }\n  if (!['http:', 'https:'].includes(parsed.protocol)) return null;\n  for (const param of [...parsed.searchParams.keys()]) {\n    if (TRACKING_PARAMS.has(param.toLowerCase())) {\n      parsed.searchParams.delete(param);\n    }\n  }\n  parsed.hash = '';\n  return parsed.toString();\n}\n\nreturn items\n  .map(item => {\n    const clean = cleanUrl(item.json.rawUrl);\n    if (!clean) return null;\n    return { json: { ...item.json, url: clean } };\n  })\n  .filter(Boolean);"
-      },
-      "id": "node-clean-links",
-      "name": "Clean Links",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        900,
-        300
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const BLOCKED_HOSTS = new Set([\n  'twitter.com', 'x.com', 'facebook.com', 'instagram.com',\n  'linkedin.com', 'youtube.com', 'tiktok.com', 'threads.net',\n]);\n\nconst BLOCKED_HOST_PATTERNS = [\n  'mailchi.mp', 'list-manage.com', 'beehiiv.com',\n  'buttondown.email', 'convertkit',\n  'sendgrid.net', 'customer.io',\n];\n\nconst BLOCKED_PATH_KEYWORDS = [\n  'unsubscribe', 'preferences', 'manage-subscription',\n  'email-preferences', 'view-in-browser', 'web-version',\n  'privacy', 'terms', 'forward-to-friend',\n  'archive', 'profile', 'account', 'settings',\n  'share', 'referral',\n];\n\nconst IMAGE_EXTENSIONS = /\\.(png|jpg|jpeg|gif|webp|svg|ico|bmp)(\\?|$)/i;\n\nfunction shouldKeep(url, anchorText) {\n  let parsed;\n  try { parsed = new URL(url); } catch { return false; }\n\n  const host = parsed.hostname.replace(/^www\\./, '').toLowerCase();\n  const path = parsed.pathname.toLowerCase();\n  const anchor = (anchorText || '').toLowerCase();\n\n  if (BLOCKED_HOSTS.has(host)) return false;\n  if (BLOCKED_HOST_PATTERNS.some(p => host.includes(p))) return false;\n  if (BLOCKED_PATH_KEYWORDS.some(kw => path.includes(kw) || anchor.includes(kw))) return false;\n  if (IMAGE_EXTENSIONS.test(url)) return false;\n  if (parsed.pathname === '/' || parsed.pathname === '') return false;\n\n  return true;\n}\n\nreturn items.filter(item => shouldKeep(item.json.url, item.json.anchorText));"
-      },
-      "id": "node-filter-junk",
-      "name": "Filter Junk Links",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1120,
-        300
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const seen = new Set();\nconst output = [];\n\nfor (const item of items) {\n  const key = item.json.url;\n  if (seen.has(key)) continue;\n  seen.add(key);\n  output.push(item);\n}\n\nreturn output;"
+        "jsCode": "const seen = new Set();\nconst output = [];\nfor (const item of items) {\n  const key = item.json.url;\n  if (seen.has(key)) continue;\n  seen.add(key);\n  output.push(item);\n}\nreturn output;"
       },
       "id": "node-dedupe-run",
       "name": "Deduplicate Within Run",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1340,
+        1400,
         300
       ]
     },
     {
       "parameters": {
-        "jsCode": "const results = [];\n\nfor (const item of items) {\n  const url = item.json.url;\n  let title = item.json.anchorText || '';\n\n  if (title.length < 10) {\n    try {\n      const controller = new AbortController();\n      const timeout = setTimeout(() => controller.abort(), 5000);\n\n      const response = await fetch(url, {\n        signal: controller.signal,\n        headers: {\n          'User-Agent': 'Mozilla/5.0 (compatible; FeedBot/1.0)',\n          'Accept': 'text/html',\n        },\n        redirect: 'follow',\n      });\n      clearTimeout(timeout);\n\n      if (response.ok) {\n        const text = await response.text();\n        const html = text.slice(0, 50000);\n        const titleMatch = html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i);\n        if (titleMatch) {\n          title = titleMatch[1]\n            .replace(/\\s+/g, ' ')\n            .replace(/&amp;/g, '&')\n            .replace(/&lt;/g, '<')\n            .replace(/&gt;/g, '>')\n            .replace(/&#x27;/g, \"'\")\n            .replace(/&quot;/g, '\"')\n            .trim();\n        }\n      }\n    } catch (e) {\n      // Timeout or network error — use fallback\n    }\n  }\n\n  if (!title || title.length < 3) {\n    try {\n      const parsed = new URL(url);\n      title = decodeURIComponent(parsed.hostname.replace(/^www\\./, '') + parsed.pathname)\n        .replace(/[\\/-]/g, ' ')\n        .replace(/\\s+/g, ' ')\n        .trim();\n    } catch {\n      title = url;\n    }\n  }\n\n  results.push({\n    json: {\n      ...item.json,\n      title,\n    },\n  });\n}\n\nreturn results;"
-      },
-      "id": "node-fetch-titles",
-      "name": "Fetch Titles",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1560,
-        300
-      ],
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "jsCode": "const fs = require('fs');\nconst feedToken = process.env.FEED_TOKEN;\nconst statePath = `/feeds/${feedToken}/state.json`;\n\nlet existingItems = [];\nif (fs.existsSync(statePath)) {\n  try {\n    existingItems = JSON.parse(fs.readFileSync(statePath, 'utf8'));\n  } catch {\n    existingItems = [];\n  }\n}\n\nreturn [{\n  json: {\n    existingItems,\n    newItems: items.map(item => item.json),\n    feedToken,\n  },\n}];"
+        "jsCode": "const fs = require('fs');\nconst feedToken = process.env.FEED_TOKEN;\nconst statePath = `/feeds/${feedToken}/state.json`;\n\nlet existingItems = [];\nif (fs.existsSync(statePath)) {\n  try { existingItems = JSON.parse(fs.readFileSync(statePath, 'utf8')); } catch { existingItems = []; }\n}\n\nreturn [{ json: { existingItems, newItems: items.map(i => i.json), feedToken } }];"
       },
       "id": "node-read-state",
       "name": "Read Existing State",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1780,
+        1640,
         300
       ]
     },
     {
       "parameters": {
-        "jsCode": "const crypto = require('crypto');\n\nfunction guidForUrl(url) {\n  return crypto.createHash('sha256').update(url).digest('hex').slice(0, 32);\n}\n\nconst { existingItems, newItems, feedToken } = items[0].json;\n\nconst byGuid = new Map();\n\nfor (const item of existingItems) {\n  byGuid.set(item.guid, item);\n}\n\nlet addedCount = 0;\nfor (const item of newItems) {\n  const guid = guidForUrl(item.url);\n  if (byGuid.has(guid)) continue;\n\n  byGuid.set(guid, {\n    guid,\n    title: item.title || item.anchorText || item.url,\n    link: item.url,\n    pubDate: new Date(item.newsletterDate || Date.now()).toUTCString(),\n    sourceNewsletter: item.newsletterSubject,\n    sourceFrom: item.newsletterFrom,\n    senderSlug: item.senderSlug,\n    senderEmail: item.senderEmail,\n    addedAt: new Date().toISOString(),\n  });\n  addedCount++;\n}\n\nconst merged = [...byGuid.values()]\n  .sort((a, b) => new Date(b.addedAt) - new Date(a.addedAt))\n  .slice(0, 500);\n\nreturn [{\n  json: {\n    items: merged,\n    feedToken,\n    addedCount,\n    totalCount: merged.length,\n  },\n}];"
+        "jsCode": "const crypto = require('crypto');\n\nfunction guidForUrl(url) {\n  return crypto.createHash('sha256').update(url).digest('hex').slice(0, 32);\n}\n\nconst { existingItems, newItems, feedToken } = items[0].json;\nconst byGuid = new Map();\n\nfor (const item of existingItems) byGuid.set(item.guid, item);\n\nlet addedCount = 0;\nfor (const item of newItems) {\n  const guid = guidForUrl(item.url);\n  if (byGuid.has(guid)) continue;\n  byGuid.set(guid, {\n    guid,\n    title: item.title || item.anchorText || item.url,\n    link: item.url,\n    pubDate: new Date(item.newsletterDate || Date.now()).toUTCString(),\n    sourceNewsletter: item.newsletterSubject,\n    sourceFrom: item.newsletterFrom,\n    senderSlug: item.senderSlug,\n    senderEmail: item.senderEmail,\n    addedAt: new Date().toISOString(),\n  });\n  addedCount++;\n}\n\nconst merged = [...byGuid.values()].sort((a, b) => new Date(b.addedAt) - new Date(a.addedAt)).slice(0, 500);\n\nreturn [{ json: { items: merged, feedToken, addedCount, totalCount: merged.length } }];"
       },
       "id": "node-merge-dedupe",
       "name": "Merge and Deduplicate",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2000,
+        1860,
         300
       ]
     },
     {
       "parameters": {
-        "jsCode": "const fs = require('fs');\nconst path = require('path');\n\nfunction escapeXml(value) {\n  return String(value || '')\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;')\n    .replace(/\"/g, '&quot;')\n    .replace(/'/g, '&apos;');\n}\n\nfunction generateRss(feedTitle, feedDescription, feedLink, feedItems) {\n  const rssItems = feedItems.map(item => `  <item>\n    <title>${escapeXml(item.title)}</title>\n    <link>${escapeXml(item.link)}</link>\n    <guid isPermaLink=\"false\">${escapeXml(item.guid)}</guid>\n    <pubDate>${item.pubDate}</pubDate>\n    <description>${escapeXml(`From: ${item.sourceNewsletter || 'newsletter'} (${item.sourceFrom || ''})`)}</description>\n    <source url=\"${escapeXml(feedLink)}\">${escapeXml(item.sourceNewsletter || 'Newsletter')}</source>\n  </item>`).join('\\n');\n\n  return `<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\" xmlns:atom=\"http://www.w3.org/2005/Atom\">\n<channel>\n  <title>${escapeXml(feedTitle)}</title>\n  <link>${escapeXml(feedLink)}</link>\n  <description>${escapeXml(feedDescription)}</description>\n  <language>en</language>\n  <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>\n  <atom:link href=\"${escapeXml(feedLink)}\" rel=\"self\" type=\"application/rss+xml\"/>\n${rssItems}\n</channel>\n</rss>`;\n}\n\nconst { items: feedItems, feedToken, addedCount, totalCount } = items[0].json;\nconst feedsDir = `/feeds/${feedToken}`;\nconst baseUrl = `https://feeds.noamelf.com/${feedToken}`;\n\nfs.mkdirSync(feedsDir, { recursive: true });\n\n// Combined feed\nconst allXml = generateRss(\n  'Newsletter Links',\n  'All links extracted from newsletters',\n  `${baseUrl}/all.xml`,\n  feedItems\n);\nfs.writeFileSync(path.join(feedsDir, 'all.xml'), allXml, 'utf8');\n\n// Per-newsletter feeds\nconst bySlug = {};\nfor (const item of feedItems) {\n  const slug = item.senderSlug || 'unknown';\n  if (!bySlug[slug]) bySlug[slug] = [];\n  bySlug[slug].push(item);\n}\n\nconst feedFiles = ['all.xml'];\nfor (const [slug, slugItems] of Object.entries(bySlug)) {\n  const filename = `${slug}.xml`;\n  const xml = generateRss(\n    `Newsletter Links: ${slugItems[0]?.sourceFrom || slug}`,\n    `Links from ${slug}`,\n    `${baseUrl}/${filename}`,\n    slugItems\n  );\n  fs.writeFileSync(path.join(feedsDir, filename), xml, 'utf8');\n  feedFiles.push(filename);\n}\n\n// Write state\nfs.writeFileSync(\n  path.join(feedsDir, 'state.json'),\n  JSON.stringify(feedItems, null, 2),\n  'utf8'\n);\n\nreturn [{\n  json: {\n    status: 'ok',\n    addedCount,\n    totalCount,\n    feedFiles,\n    combinedFeedUrl: `${baseUrl}/all.xml`,\n    perNewsletterFeeds: Object.keys(bySlug).map(slug => `${baseUrl}/${slug}.xml`),\n  },\n}];"
+        "jsCode": "const fs = require('fs');\nconst path = require('path');\n\nfunction escapeXml(value) {\n  return String(value || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&apos;');\n}\n\nfunction generateRss(feedTitle, feedDescription, feedLink, feedItems) {\n  const rssItems = feedItems.map(item => `  <item>\n    <title>${escapeXml(item.title)}</title>\n    <link>${escapeXml(item.link)}</link>\n    <guid isPermaLink=\"false\">${escapeXml(item.guid)}</guid>\n    <pubDate>${item.pubDate}</pubDate>\n    <description>${escapeXml('From: ' + (item.sourceNewsletter || 'newsletter') + ' (' + (item.sourceFrom || '') + ')')}</description>\n    <source url=\"${escapeXml(feedLink)}\">${escapeXml(item.sourceNewsletter || 'Newsletter')}</source>\n  </item>`).join('\\n');\n\n  return `<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\" xmlns:atom=\"http://www.w3.org/2005/Atom\">\n<channel>\n  <title>${escapeXml(feedTitle)}</title>\n  <link>${escapeXml(feedLink)}</link>\n  <description>${escapeXml(feedDescription)}</description>\n  <language>en</language>\n  <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>\n  <atom:link href=\"${escapeXml(feedLink)}\" rel=\"self\" type=\"application/rss+xml\"/>\n${rssItems}\n</channel>\n</rss>`;\n}\n\nconst { items: feedItems, feedToken, addedCount, totalCount } = items[0].json;\nconst feedsDir = `/feeds/${feedToken}`;\nconst baseUrl = `https://feeds.noamelf.com/${feedToken}`;\n\nfs.mkdirSync(feedsDir, { recursive: true });\n\nconst allXml = generateRss('Newsletter Links', 'All links extracted from newsletters', `${baseUrl}/all.xml`, feedItems);\nfs.writeFileSync(path.join(feedsDir, 'all.xml'), allXml, 'utf8');\n\nconst bySlug = {};\nfor (const item of feedItems) {\n  const slug = item.senderSlug || 'unknown';\n  if (!bySlug[slug]) bySlug[slug] = [];\n  bySlug[slug].push(item);\n}\n\nconst feedFiles = ['all.xml'];\nfor (const [slug, slugItems] of Object.entries(bySlug)) {\n  const filename = `${slug}.xml`;\n  const xml = generateRss(`Newsletter Links: ${slugItems[0]?.sourceFrom || slug}`, `Links from ${slug}`, `${baseUrl}/${filename}`, slugItems);\n  fs.writeFileSync(path.join(feedsDir, filename), xml, 'utf8');\n  feedFiles.push(filename);\n}\n\nfs.writeFileSync(path.join(feedsDir, 'state.json'), JSON.stringify(feedItems, null, 2), 'utf8');\n\nreturn [{ json: { status: 'ok', addedCount, totalCount, feedFiles, combinedFeedUrl: `${baseUrl}/all.xml`, perNewsletterFeeds: Object.keys(bySlug).map(s => `${baseUrl}/${s}.xml`) } }];"
       },
       "id": "node-generate-rss",
       "name": "Generate RSS and Write Files",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2220,
+        2080,
         300
       ]
     }
   ],
   "connections": {
     "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Full Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Full Message": {
       "main": [
         [
           {
@@ -172,36 +210,36 @@
       "main": [
         [
           {
-            "node": "Extract Links",
+            "node": "AI Extract Links",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Extract Links": {
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Extract Links",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Extract Links": {
       "main": [
         [
           {
-            "node": "Clean Links",
+            "node": "Parse AI Output",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Clean Links": {
-      "main": [
-        [
-          {
-            "node": "Filter Junk Links",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Filter Junk Links": {
+    "Parse AI Output": {
       "main": [
         [
           {
@@ -213,17 +251,6 @@
       ]
     },
     "Deduplicate Within Run": {
-      "main": [
-        [
-          {
-            "node": "Fetch Titles",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch Titles": {
       "main": [
         [
           {
@@ -259,5 +286,6 @@
   },
   "settings": {
     "executionOrder": "v1"
-  }
+  },
+  "id": "A3ZlbZ8PUi0CvLvs"
 }

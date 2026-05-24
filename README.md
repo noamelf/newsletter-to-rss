@@ -6,7 +6,7 @@ Self-hosted n8n workflow that extracts individual links from aggregated newslett
 
 ```
 Gmail (newsletter-rss label)
-  → n8n (extract links, clean, dedupe, fetch titles)
+  → n8n (AI extract links via OpenRouter/gemini-2.5-flash, dedupe)
     → RSS XML files (per-newsletter + combined)
       → Caddy serves over HTTPS
         → Feedbin subscribes
@@ -39,8 +39,10 @@ This will interactively:
 1. Open https://n8n.noamelf.com
 2. Create your n8n account
 3. Add Gmail OAuth2 credentials (see below)
-4. Import `workflow.json` (already on server at `/opt/newsletter-rss/`)
-5. Activate the workflow
+4. Add OpenRouter API credentials (Credentials → New → OpenRouter → paste API key)
+5. Import `workflow.json` (already on server at `/opt/newsletter-rss/`)
+6. Update the "OpenRouter Chat Model" node to use your OpenRouter credential
+7. Activate the workflow
 
 ### 2. Gmail OAuth2
 
