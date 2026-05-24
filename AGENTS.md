@@ -9,7 +9,7 @@ Gmail (newsletter-rss label)
   → n8n (AI extract links via OpenRouter → dedupe)
     → /feeds/<FEED_TOKEN>/<slug>.xml + all.xml + state.json
       → Caddy (HTTPS, feeds.noamelf.com)
-        → Feedbin
+        → RSS reader (NetNewsWire, Feedbin, etc.)
 ```
 
 **Services** (docker-compose.yml): `postgres`, `n8n`, `caddy`
@@ -27,16 +27,22 @@ Gmail (newsletter-rss label)
 
 The workflow nodes in order:
 
-1. **Gmail Trigger** — polls label `newsletter-rss` every 5 min
+1. **Gmail Trigger** — polls label `newsletter-rss` every minute
 2. **Fetch Full Message** — Gmail API call for full body
 3. **Normalize Email** — extracts headers (subject, from, date), decodes base64 body
-4. **AI Extract Links** — Basic LLM Chain (gemini-2.5-flash via OpenRouter) extracts article links with titles from newsletter HTML, skipping tracking/social/junk links
+4. **AI Extract Links** — Basic LLM Chain (gemini-2.5-flash via OpenRouter) extracts article links with titles and descriptions from newsletter HTML, skipping tracking/social/junk links
 5. **OpenRouter Chat Model** — sub-node providing the LLM to AI Extract Links
-6. **Parse AI Output** — parses the LLM JSON response into individual items with newsletter metadata
+6. **Parse AI Output** — parses the LLM JSON response into individual items with newsletter metadata; handles both pre-parsed JSON (`.links` array) and text fallback
 7. **Deduplicate Within Run** — dedupes by URL within a single execution
 8. **Read Existing State** — reads `/feeds/<token>/state.json` (persists across runs)
-9. **Merge and Deduplicate** — SHA-256 GUID per URL, keeps latest 500 items
-10. **Generate RSS and Write Files** — writes `all.xml`, per-sender `<slug>.xml`, updates `state.json`
+9. **Merge and Deduplicate** — SHA-256 GUID per URL, keeps latest 500 items, stores description per item
+10. **Generate RSS and Write Files** — writes `all.xml`, per-sender `<slug>.xml` (with favicon via Google's s2/favicons), updates `state.json`
+
+## RSS Output
+
+- Each RSS item includes: title, link, GUID, pubDate, description (AI-extracted + source newsletter), source
+- Per-sender feeds include an `<image>` element with the newsletter domain's favicon (via `https://www.google.com/s2/favicons?domain=<domain>&sz=128`)
+- Descriptions format: `"<AI description> — From: <subject> (<sender>)"`
 
 ## Conventions
 
@@ -47,6 +53,15 @@ The workflow nodes in order:
 - `NODE_FUNCTION_ALLOW_BUILTIN: "fs,crypto,path,url"` is required in n8n for Code nodes to work
 - n8n runs as user `1000:1000`; ensure `./feeds` and `./n8n_data` are writable by that UID
 
+## Live Instance
+
+- **Server**: `ssh root@n8n.noamelf.com` (Hetzner)
+- **n8n UI**: `https://n8n.noamelf.com`
+- **Feeds**: `https://feeds.noamelf.com/<FEED_TOKEN>/all.xml`
+- **Workflow ID**: `A3ZlbZ8PUi0CvLvs`
+- **Docker project dir**: `/opt/newsletter-rss`
+- **Feed token (live)**: hardcoded in Read Existing State node (local `workflow.json` uses `process.env.FEED_TOKEN`)
+
 ## Deployment
 
 ```bash
@@ -56,8 +71,40 @@ export CLOUDFLARE_API_TOKEN=your_token
 
 After deploy: open n8n UI → import `workflow.json` → add Gmail OAuth2 credentials → add OpenRouter API credentials → activate.
 
+## Deploying Workflow Changes
+
+To update the live workflow after editing `workflow.json`:
+
+1. Use the n8n public API (`PUT /api/v1/workflows/<id>`) with the API key from the `user_api_keys` table
+2. The API ignores `staticData` — it cannot be updated via REST (see below)
+3. Settings must only include known fields (`executionOrder`, `timezone`, etc.) or the API returns 400
+
+## Reprocessing a Newsletter
+
+To force re-processing of a previously seen email:
+
+1. **Deactivate** the workflow (flushes in-memory `staticData` to DB)
+2. **Update PostgreSQL** — remove the message ID from `possibleDuplicates` in `staticData`:
+   ```bash
+   ssh root@n8n.noamelf.com
+   cd /opt/newsletter-rss
+   docker compose exec -T postgres psql -U n8n -d n8n -c \
+     "SELECT \"staticData\" FROM workflow_entity WHERE id = 'A3ZlbZ8PUi0CvLvs';"
+   # Then UPDATE with the modified JSON (remove target message ID from possibleDuplicates array)
+   ```
+3. **Optionally delete feed files** to start fresh: `rm -f feeds/<token>/*.xml feeds/<token>/state.json`
+4. **Reactivate** the workflow (reads updated `staticData` from DB on startup)
+
+**⚠️ Order matters**: deactivate → update DB → reactivate. If you update DB before deactivating, the deactivation flushes in-memory state and overwrites your change.
+
 ## Updates
 
 ```bash
-ssh root@<SERVER_IP> "cd /opt/newsletter-rss && ./backup.sh && docker compose pull && docker compose up -d"
+ssh root@n8n.noamelf.com "cd /opt/newsletter-rss && ./backup.sh && docker compose pull && docker compose up -d"
 ```
+
+## Known Limitations
+
+- **`staticData` cannot be updated via n8n public API** — PATCH/PUT silently accept but don't persist. Must update PostgreSQL directly.
+- **Basic LLM Chain with `responseFormat: json_object`** returns pre-parsed JSON on `items[i].json` (e.g., `.links` is an array), NOT wrapped in a `.text` string. Parse AI Output handles both cases.
+- **Per-sender feed favicons** depend on the newsletter website having a proper favicon. Many newsletter platforms (MailerLite, Beehiiv, etc.) serve their own generic favicon instead of the newsletter's brand icon.
