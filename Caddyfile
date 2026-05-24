@@ -9,6 +9,6 @@
     @xml path *.xml
     header @xml Content-Type "application/rss+xml; charset=utf-8"
 
-    @json path *.json
-    respond @json 403
+    @notXml not path *.xml
+    respond @notXml 403
 }
