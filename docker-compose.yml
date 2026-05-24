@@ -15,7 +15,7 @@ services:
       retries: 5
 
   n8n:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:2.22.2
     restart: unless-stopped
     user: "1000:1000"
     depends_on:
@@ -41,9 +41,15 @@ services:
     volumes:
       - ./n8n_data:/home/node/.n8n
       - ./feeds:/feeds
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   caddy:
-    image: caddy:2
+    image: caddy:2.11.3
     restart: unless-stopped
     depends_on:
       - n8n
@@ -58,3 +64,8 @@ services:
       - ./feeds:/srv/feeds:ro
       - ./caddy_data:/data
       - ./caddy_config:/config
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
