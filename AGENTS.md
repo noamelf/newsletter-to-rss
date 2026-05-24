@@ -30,7 +30,7 @@ The workflow nodes in order:
 1. **Gmail Trigger** — polls label `newsletter-rss` every minute
 2. **Fetch Full Message** — Gmail API call for full body
 3. **Normalize Email** — extracts headers (subject, from, date), decodes base64 body
-4. **AI Extract Links** — Basic LLM Chain (gemini-2.5-flash via OpenRouter) extracts article links with titles and descriptions from newsletter HTML, skipping tracking/social/junk links
+4. **AI Extract Links** — Basic LLM Chain (gemini-2.5-flash-lite via OpenRouter) extracts article links with titles and descriptions from newsletter HTML, skipping tracking/social/junk links
 5. **OpenRouter Chat Model** — sub-node providing the LLM to AI Extract Links
 6. **Parse AI Output** — parses the LLM JSON response into individual items with newsletter metadata; handles both pre-parsed JSON (`.links` array) and text fallback
 7. **Deduplicate Within Run** — dedupes by URL within a single execution

@@ -95,7 +95,7 @@
     },
     {
       "parameters": {
-        "model": "google/gemini-2.5-flash",
+        "model": "google/gemini-2.5-flash-lite",
         "options": {
           "responseFormat": "json_object",
           "temperature": 0.1
