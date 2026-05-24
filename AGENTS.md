@@ -81,21 +81,9 @@ To update the live workflow after editing `workflow.json`:
 
 ## Reprocessing a Newsletter
 
-To force re-processing of a previously seen email:
+See `.agent/skills/reprocess-newsletter/SKILL.md` for the full step-by-step procedure.
 
-1. **Deactivate** the workflow (flushes in-memory `staticData` to DB)
-2. **Update PostgreSQL** — remove the message ID from `possibleDuplicates` in `staticData`:
-   ```bash
-   ssh root@n8n.noamelf.com
-   cd /opt/newsletter-rss
-   docker compose exec -T postgres psql -U n8n -d n8n -c \
-     "SELECT \"staticData\" FROM workflow_entity WHERE id = 'A3ZlbZ8PUi0CvLvs';"
-   # Then UPDATE with the modified JSON (remove target message ID from possibleDuplicates array)
-   ```
-3. **Optionally delete feed files** to start fresh: `rm -f feeds/<token>/*.xml feeds/<token>/state.json`
-4. **Reactivate** the workflow (reads updated `staticData` from DB on startup)
-
-**⚠️ Order matters**: deactivate → update DB → reactivate. If you update DB before deactivating, the deactivation flushes in-memory state and overwrites your change.
+**TL;DR**: deactivate workflow → update PostgreSQL `staticData` (remove message ID from `possibleDuplicates`) → optionally delete feed files → reactivate. Order is critical — deactivation flushes in-memory state to DB, so you must deactivate before modifying.
 
 ## Updates
 
