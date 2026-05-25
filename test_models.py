@@ -14,6 +14,10 @@ Usage:
   # Skip HTTP verification (faster):
   OPENROUTER_API_KEY=sk-or-... python3 test_models.py newsletter.html --no-http
 
+  # Fast comparison of a few candidates:
+  OPENROUTER_API_KEY=sk-or-... python3 test_models.py newsletter.html \
+    -m google/gemini-2.0-flash-001 openai/gpt-5.4-nano --max-http 5
+
   # Fetch pricing info:
   OPENROUTER_API_KEY=sk-or-... python3 test_models.py --list-models
 """
@@ -52,20 +56,88 @@ SYSTEM_PROMPT = (
     '- If no content links found, return {"links": []}'
 )
 
-DEFAULT_MODELS = [
-    "google/gemini-2.5-flash",
-    "google/gemini-2.5-flash-lite",
+# The current production model
+CURRENT_MODEL = "google/gemini-2.5-flash"
+
+# Curated cheap models — best 1-2 per vendor, ≤$0.50/$2.00 per M tokens, ≥30k context.
+# Run `--list-models` to discover new options. Last updated: 2026-05-25
+MODELS_BY_VENDOR = {
+    # --- Google ---
+    "google": [
+        "google/gemini-2.5-flash",           # $0.30/$2.50 — current production baseline
+        "google/gemini-2.5-flash-lite",      # $0.10/$0.40 — hallucinates URLs!
+        "google/gemini-2.0-flash-001",       # $0.10/$0.40 — proven zero hallucinations ✅
+        "google/gemini-2.0-flash-lite-001",  # $0.07/$0.30 — cheapest Google
+    ],
+    # --- OpenAI ---
+    "openai": [
+        "openai/gpt-5.4-nano",              # $0.20/$1.25 — latest nano, reliable
+        "openai/gpt-4.1-nano",              # $0.10/$0.40 — may miss some links
+        "openai/gpt-5-nano",                # $0.05/$0.40 — cheapest but ~70s latency
+    ],
+    # --- Anthropic ---
+    "anthropic": [
+        "anthropic/claude-3-haiku",          # $0.25/$1.25 — reliable, no json_object issues
+    ],
+    # --- DeepSeek ---
+    "deepseek": [
+        "deepseek/deepseek-v4-flash",        # $0.10/$0.20 — cheapest output cost
+        "deepseek/deepseek-v3.2",            # $0.25/$0.38
+    ],
+    # --- Meta ---
+    "meta": [
+        "meta-llama/llama-4-scout",          # $0.08/$0.30 — fast, good results
+    ],
+    # --- Qwen ---
+    "qwen": [
+        "qwen/qwen3-235b-a22b-2507",         # $0.07/$0.10 — cheapest overall output
+        "qwen/qwen3.5-flash-02-23",          # $0.07/$0.26
+    ],
+    # --- Mistral ---
+    "mistral": [
+        "mistralai/mistral-small-3.2-24b-instruct",  # $0.07/$0.20
+    ],
+    # --- Others worth tracking ---
+    "other": [
+        "amazon/nova-micro-v1",              # $0.04/$0.14 — very cheap
+        "bytedance-seed/seed-1.6-flash",     # $0.07/$0.30
+    ],
+}
+
+# Quick subset for fast iteration (proven reliable + cheap)
+FAST_MODELS = [
     "google/gemini-2.0-flash-001",
     "google/gemini-2.0-flash-lite-001",
-    "google/gemma-4-26b-a4b-it",
     "openai/gpt-5.4-nano",
-    "openai/gpt-4.1-nano",
-    "anthropic/claude-3-haiku",
-    "deepseek/deepseek-v4-flash",
     "meta-llama/llama-4-scout",
+    "deepseek/deepseek-v4-flash",
     "qwen/qwen3-235b-a22b-2507",
-    "mistralai/mistral-small-3.2-24b-instruct",
 ]
+
+# All curated models flattened
+ALL_MODELS = [m for models in MODELS_BY_VENDOR.values() for m in models]
+
+# Default: fast set. Use --all for full list, or --vendors google openai for specific vendors.
+DEFAULT_MODELS = FAST_MODELS
+
+MODEL_PRICING = {
+    "google/gemini-2.5-flash": (0.30, 2.50),
+    "google/gemini-2.5-flash-lite": (0.10, 0.40),
+    "google/gemini-2.0-flash-001": (0.10, 0.40),
+    "google/gemini-2.0-flash-lite-001": (0.07, 0.30),
+    "openai/gpt-5.4-nano": (0.20, 1.25),
+    "openai/gpt-4.1-nano": (0.10, 0.40),
+    "openai/gpt-5-nano": (0.05, 0.40),
+    "anthropic/claude-3-haiku": (0.25, 1.25),
+    "deepseek/deepseek-v4-flash": (0.10, 0.20),
+    "deepseek/deepseek-v3.2": (0.25, 0.38),
+    "meta-llama/llama-4-scout": (0.08, 0.30),
+    "qwen/qwen3-235b-a22b-2507": (0.07, 0.10),
+    "qwen/qwen3.5-flash-02-23": (0.07, 0.26),
+    "mistralai/mistral-small-3.2-24b-instruct": (0.07, 0.20),
+    "amazon/nova-micro-v1": (0.04, 0.14),
+    "bytedance-seed/seed-1.6-flash": (0.07, 0.30),
+}
 
 
 @dataclass
@@ -81,6 +153,62 @@ class ModelResult:
     http_errors: list = field(default_factory=list)
     hallucinated: int = 0
     hallucinated_urls: list = field(default_factory=list)
+    estimated_cost: float = 0.0
+
+
+def parse_model_response(data: dict) -> tuple[list, int, int]:
+    """Parse OpenRouter response JSON into links and token usage."""
+    content = data["choices"][0]["message"]["content"]
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        code_block = re.search(r"```(?:json)?\s*([\s\S]*?)```", content)
+        if code_block:
+            parsed = json.loads(code_block.group(1).strip())
+        else:
+            match = re.search(r"\{[\s\S]*\}", content)
+            if not match:
+                raise
+            parsed = json.loads(match.group())
+
+    links = parsed.get("links", parsed) if isinstance(parsed, dict) else parsed
+    if not isinstance(links, list):
+        links = []
+
+    usage = data.get("usage", {})
+    return links, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
+
+
+def estimate_cost_usd(
+    tokens_in: int,
+    tokens_out: int,
+    input_price_per_million: float,
+    output_price_per_million: float,
+) -> float:
+    return (
+        tokens_in / 1_000_000 * input_price_per_million
+        + tokens_out / 1_000_000 * output_price_per_million
+    )
+
+
+def resolve_models(patterns: list[str] | None, candidates: list[str] | None = None) -> list[str]:
+    if not patterns:
+        return list(candidates or DEFAULT_MODELS)
+
+    available = candidates or ALL_MODELS
+    resolved = []
+    for pattern in patterns:
+        matched = [model for model in available if pattern in model]
+        if matched:
+            resolved.extend(matched)
+        else:
+            resolved.append(pattern)
+
+    return list(dict.fromkeys(resolved))
+
+
+def has_failed(result: ModelResult) -> bool:
+    return bool(result.error or result.hallucinated > 0 or result.http_fail > 0)
 
 
 def extract_source_urls(html: str) -> set[str]:
@@ -156,17 +284,14 @@ def call_model(model: str, html: str) -> ModelResult:
             data = json.loads(resp.read())
         result.elapsed = time.time() - start
 
-        content = data["choices"][0]["message"]["content"]
-        try:
-            parsed = json.loads(content)
-        except json.JSONDecodeError:
-            m = re.search(r"\{[\s\S]*\}", content)
-            parsed = json.loads(m.group()) if m else {"links": []}
-
-        result.links = parsed.get("links", [])
-        usage = data.get("usage", {})
-        result.tokens_in = usage.get("prompt_tokens", 0)
-        result.tokens_out = usage.get("completion_tokens", 0)
+        result.links, result.tokens_in, result.tokens_out = parse_model_response(data)
+        input_price, output_price = MODEL_PRICING.get(model, (0.0, 0.0))
+        result.estimated_cost = estimate_cost_usd(
+            result.tokens_in,
+            result.tokens_out,
+            input_price,
+            output_price,
+        )
 
     except Exception as e:
         result.elapsed = time.time() - start
@@ -259,7 +384,7 @@ def print_results(results: list[ModelResult], do_http: bool) -> None:
     header = f"{'Model':<42} {'Time':>5} {'Links':>5} {'Halluc':>6}"
     if do_http:
         header += f" {'HTTP✅':>6} {'HTTP❌':>6}"
-    header += "  Status"
+    header += f" {'Cost':>8}  Status"
     print(header)
     print("-" * 90)
 
@@ -277,7 +402,8 @@ def print_results(results: list[ModelResult], do_http: bool) -> None:
         line = f"{r.model:<42} {r.elapsed:>4.1f}s {len(r.links):>5} {r.hallucinated:>6}"
         if do_http:
             line += f" {r.http_ok:>6} {r.http_fail:>6}"
-        line += f"  {status}"
+        cost = f"${r.estimated_cost:.4f}" if r.estimated_cost else "n/a"
+        line += f" {cost:>8}  {status}"
         print(line)
 
     # Show hallucinated URLs
@@ -308,6 +434,8 @@ def main():
     parser.add_argument("--list-models", action="store_true", help="List cheap models on OpenRouter and exit")
     parser.add_argument("--max-http", type=int, default=15, help="Max URLs to HTTP-check per model (default: 15)")
     parser.add_argument("--parallel", type=int, default=3, help="Max parallel model API calls (default: 3)")
+    parser.add_argument("--all", action="store_true", help="Test ALL curated models (not just the fast subset)")
+    parser.add_argument("--vendors", nargs="+", help="Test models from specific vendors (e.g. google openai deepseek)")
     args = parser.parse_args()
 
     if not API_KEY:
@@ -330,17 +458,22 @@ def main():
 
     print(f"Newsletter: {len(html)} chars")
 
-    # Resolve models
-    models = DEFAULT_MODELS
+    # Resolve which models to test
     if args.models:
-        resolved = []
-        for pattern in args.models:
-            matched = [m for m in DEFAULT_MODELS if pattern in m]
-            if matched:
-                resolved.extend(matched)
-            else:
-                resolved.append(pattern)  # assume full model ID
-        models = resolved
+        models = resolve_models(args.models)
+    elif args.vendors:
+        models = []
+        for v in args.vendors:
+            matched = [m for k, ms in MODELS_BY_VENDOR.items() for m in ms if v.lower() in k.lower() or v.lower() in m.lower()]
+            models.extend(matched)
+        if not models:
+            print(f"No models matched vendors: {args.vendors}", file=sys.stderr)
+            print(f"Available: {', '.join(MODELS_BY_VENDOR.keys())}", file=sys.stderr)
+            sys.exit(1)
+    elif args.all:
+        models = ALL_MODELS
+    else:
+        models = DEFAULT_MODELS
 
     print(f"Testing {len(models)} models...")
 
@@ -375,6 +508,9 @@ def main():
     results.sort(key=lambda r: order.get(r.model, 999))
 
     print_results(results, not args.no_http)
+
+    if any(has_failed(result) for result in results):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

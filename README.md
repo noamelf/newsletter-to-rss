@@ -7,7 +7,7 @@ Self-hosted n8n workflow that extracts individual links from aggregated newslett
 ```
 Gmail (newsletter-rss label)
   → n8n (AI extract links via OpenRouter/deepseek-v4-flash, dedupe)
-    → RSS XML files (per-newsletter + combined)
+    → RSS XML files (per-newsletter) + OPML index
       → Caddy serves over HTTPS
         → Your RSS reader subscribes
 ```
@@ -62,7 +62,7 @@ Create a label `newsletter-rss`, then add filters for each newsletter:
 ### 4. RSS Reader
 
 Subscribe to your feeds (token shown at end of setup):
-- Combined: `https://feeds.<DOMAIN>/<FEED_TOKEN>/all.xml`
+- OPML import: `https://feeds.<DOMAIN>/<FEED_TOKEN>/feeds.opml`
 - Per-newsletter: `https://feeds.<DOMAIN>/<FEED_TOKEN>/<sender-slug>.xml`
 
 ## Environment Variables

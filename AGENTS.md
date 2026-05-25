@@ -7,7 +7,7 @@ Self-hosted n8n workflow that extracts links from Gmail newsletters and serves t
 ```
 Gmail (newsletter-rss label)
   → n8n (AI extract links via OpenRouter → dedupe)
-    → /feeds/<FEED_TOKEN>/<slug>.xml + all.xml + state.json
+    → /feeds/<FEED_TOKEN>/<slug>.xml + feeds.opml + state.json
       → Caddy (HTTPS, feeds.noamelf.com)
         → RSS reader (NetNewsWire, Feedbin, etc.)
 ```
@@ -36,7 +36,7 @@ The workflow nodes in order:
 7. **Deduplicate Within Run** — dedupes by URL within a single execution
 8. **Read Existing State** — reads `/feeds/<token>/state.json` (persists across runs)
 9. **Merge and Deduplicate** — SHA-256 GUID per URL, keeps latest 500 items, stores description per item
-10. **Generate RSS and Write Files** — writes `all.xml`, per-sender `<slug>.xml` (with favicon via Google's s2/favicons), updates `state.json`
+10. **Generate RSS and Write Files** — writes per-sender `<slug>.xml` (with favicon via Google's s2/favicons), generates `feeds.opml` for easy import, updates `state.json`
 
 ## RSS Output
 
@@ -57,7 +57,7 @@ The workflow nodes in order:
 
 - **Server**: `ssh root@n8n.noamelf.com` (Hetzner)
 - **n8n UI**: `https://n8n.noamelf.com`
-- **Feeds**: `https://feeds.noamelf.com/<FEED_TOKEN>/all.xml`
+- **Feeds**: `https://feeds.noamelf.com/<FEED_TOKEN>/feeds.opml`
 - **Workflow ID**: `A3ZlbZ8PUi0CvLvs`
 - **Docker project dir**: `/opt/newsletter-rss`
 - **Feed token (live)**: hardcoded in Read Existing State node (local `workflow.json` uses `process.env.FEED_TOKEN`)
